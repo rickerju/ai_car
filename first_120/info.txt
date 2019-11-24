@@ -1,0 +1,2 @@
+1 hidden node
+full_direct

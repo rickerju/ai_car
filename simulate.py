@@ -1,11 +1,40 @@
-from datetime import datetime
 import gym
 import neat
+from neat import Checkpointer
+from neat.reporting import BaseReporter
+
+class generationData():
+    generation = 0
+    framesForGen = 10
+
+    def nextGen(self):
+        self.generation += 1
+
+        if self.generation % 10 == 0 and self.framesForGen < 1000:
+            self.framesForGen += 50
+
+    def getGen(self):
+        return self.generation
 
 env = gym.make('CarRacing-v0')
+genData = generationData()
+
+class afterGenerationReporter(BaseReporter):
+
+    def __init__(self, genData):
+        self.generation = genData
+
+    def post_evaluate(self, config, population, species, best_genome):
+        print("----- Post Evaluate -----")
+        print("best genome fitness " + str(best_genome.fitness))
+
+    def end_generation(self, config, population, species_set):
+        for genome in population.values():
+            print(genome.fitness)
+
+        self.generation.nextGen()
 
 def convert_pixel_to_input(p):
-
     # black (0,0,0) red (255,0,0),(204,0,0) blue (51, 0, 255), (0,0,255)
     if (p[0] == 0 and p[1] == 0 and p[2] == 0) or \
             (p[0] == 255 and p[1] == p[2] == 0) or \
@@ -28,8 +57,8 @@ def convert_pixel_to_input(p):
             p[0] == p[1] == p[2] == 31 or \
             p[0] == p[1] == p[2] == 4 or \
             p[0] == p[1] == p[2] == 173 or \
-            p[0] == p[1] == p[2] == 177 or\
-            p[0] == p[1] == p[2] == 190 or\
+            p[0] == p[1] == p[2] == 177 or \
+            p[0] == p[1] == p[2] == 190 or \
             p[0] == p[1] == p[2] == 57 or \
             p[0] == p[1] == p[2] == 244 or \
             p[0] == p[1] == p[2] and 102:
@@ -48,26 +77,22 @@ def convert_observation_to_inputs(observation):
 def eval_genomes(genomes, config):
     for genome_id, genome in genomes:
         observation = env.reset()
-        frames = 0
         totalReward = 0
         net = neat.nn.FeedForwardNetwork.create(genome, config)
-        for index in range(1000):
+        for index in range(genData.framesForGen):
             env.render()
-            frames += 1
             inputs = convert_observation_to_inputs(observation)
             inputs.append(1)
             observation, reward, done, info = env.step(net.activate(inputs))
-
-            if(index % 50 == 0):
-                print(str(datetime.now()) + " frame " + str(index) + "\ncurrent reward=" + str(totalReward))
 
             totalReward += reward
 
             if done:
                 break
+
         env.close()
-        reward = 1000 - .1 * frames
-        genome.reward = reward
+        genome.fitness = totalReward
+        print(str(totalReward) + " for generation " + str(genData.generation))
 
 # Load configuration.
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
@@ -78,7 +103,9 @@ config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
 p = neat.Population(config)
 
 # Add a stdout reporter to show progress in the terminal.
-p.add_reporter(neat.StdOutReporter(False))
+p.add_reporter(afterGenerationReporter(genData))
+p.add_reporter(Checkpointer(10, None, "first-run-"))
+# p.add_reporter(neat.StdOutReporter(False))
 
 # Run until a solution is found.
 winner = p.run(eval_genomes)
