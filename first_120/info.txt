@@ -1,2 +1,5 @@
 1 hidden node
-full_direct
+full_direct (oops)
+
+expects 9026 inputs
+All pixels are individual inputs

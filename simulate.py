@@ -1,38 +1,57 @@
 import gym
 import neat
+import sys
 from neat import Checkpointer
 from neat.reporting import BaseReporter
 
+
 class generationData():
     generation = 0
-    framesForGen = 10
+    framesForGen = 50
 
+    # advance metadata by one generation
     def nextGen(self):
         self.generation += 1
 
         if self.generation % 10 == 0 and self.framesForGen < 1000:
             self.framesForGen += 50
 
+    # get generation number
     def getGen(self):
         return self.generation
+
+    # set initial frames
+    def setFrames(self, frames):
+        self.framesForGen = frames
+
+    # set framesForGen to full
+    def finalize(self):
+        self.framesForGen = 1000
+
 
 env = gym.make('CarRacing-v0')
 genData = generationData()
 
+
+# class that logs information
 class afterGenerationReporter(BaseReporter):
 
     def __init__(self, genData):
         self.generation = genData
 
+    # after all the genomes in a generation have been evaluated
     def post_evaluate(self, config, population, species, best_genome):
         print("----- Post Evaluate -----")
+        print("completed generation " + str(genData.generation))
         print("best genome fitness " + str(best_genome.fitness))
 
+    # after the generation has completed
     def end_generation(self, config, population, species_set):
-        for genome in population.values():
-            print(genome.fitness)
+        # for genome in population.values():
+        #     print(genome.fitness)
 
         self.generation.nextGen()
+
 
 def convert_pixel_to_input(p):
     # black (0,0,0) red (255,0,0),(204,0,0) blue (51, 0, 255), (0,0,255)
@@ -67,6 +86,8 @@ def convert_pixel_to_input(p):
     else:
         raise EnvironmentError(str(p) + " not found")
 
+
+# convert observation from gym to
 def convert_observation_to_inputs(observation):
     newInputs = list()
     for x in range(95):
@@ -74,16 +95,57 @@ def convert_observation_to_inputs(observation):
             newInputs.append(convert_pixel_to_input(observation[x, y]))
     return newInputs
 
+
+# # get mean of all elements in the 4 x 4 chunk of values
+# def get_mean(list):
+#     if len(list) != 16:
+#         raise EnvironmentError("number of inputs in list is invalid")
+#
+#     total = 0
+#     items = 0
+#     for i in list:
+#         items += 1
+#         total += i
+#     return total / items
+#
+#
+# # converts observation from gym to 576 inputs for 4 x 4 chunks of pixels
+# def convert_observation_to_inputs(observation):
+#     finalInputs = list()
+#     tempInputs = list()
+#     for x in range(24):
+#         for y in range(24):
+#             for xr in range(4):
+#                 for yr in range(4):
+#                     tempInputs.append(convert_pixel_to_input(observation[4 * x + xr, 4 * y + yr]))
+#             finalInputs.append(get_mean(tempInputs))
+#             tempInputs = list()
+#     return finalInputs
+
+
+# alters outputs from neural network
+def prepare_outputs(outputs):
+    processedOutputs = list()
+
+    processedOutputs.append(outputs[0] - .5)
+    processedOutputs.append(outputs[1])
+    processedOutputs.append(outputs[2])
+
+    return processedOutputs
+
+
+# function that is used to evaluate each individual genome in a generation
 def eval_genomes(genomes, config):
-    for genome_id, genome in genomes:
+    for _, genome in genomes:
         observation = env.reset()
-        totalReward = 0
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        for index in range(genData.framesForGen):
-            env.render()
+        totalReward = 0  # cumulative reward given by gym
+        net = neat.nn.FeedForwardNetwork.create(genome, config)  # instantiate new NN
+        for _ in range(genData.framesForGen):
+            env.render()  # comment out for better performance but no visual
             inputs = convert_observation_to_inputs(observation)
-            inputs.append(1)
-            observation, reward, done, info = env.step(net.activate(inputs))
+            inputs.append(1)  # add bias node
+            output = net.activate(inputs)
+            observation, reward, done, info = env.step(prepare_outputs(output))  # advance to next frame
 
             totalReward += reward
 
@@ -92,30 +154,24 @@ def eval_genomes(genomes, config):
 
         env.close()
         genome.fitness = totalReward
-        print(str(totalReward) + " for generation " + str(genData.generation))
+
 
 # Load configuration.
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
                      'config')
 
-# Create the population, which is the top-level object for a NEAT run.
-p = neat.Population(config)
+# Create the population
+if len(sys.argv) == 1:
+    p = neat.Population(config)
+else:
+    p = Checkpointer.restore_checkpoint(sys.argv[1])
+    genData.setFrames(200)  # initial number of frames when loading population
+    print("loaded population from " + sys.argv[1])
 
-# Add a stdout reporter to show progress in the terminal.
+# add checkpoints and logger
 p.add_reporter(afterGenerationReporter(genData))
-p.add_reporter(Checkpointer(10, None, "first-run-"))
-# p.add_reporter(neat.StdOutReporter(False))
+p.add_reporter(Checkpointer(10, None, "gen-"))  # name of file that will be generated with suffix of generation number
 
-# Run until a solution is found.
+# run until fitness of 750 is met
 winner = p.run(eval_genomes)
-
-# Display the winning genome.
-# print('\nBest genome:\n{!s}'.format(winner))
-
-# Show output of the most fit genome against training data.
-# print('\nOutput:')
-# winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
-# for xi, xo in zip(xor_inputs, xor_outputs):
-#     output = winner_net.activate(xi)
-#     print("  input {!r}, expected output {!r}, got {!r}".format(xi, xo, output))

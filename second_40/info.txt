@@ -1,0 +1,3 @@
+tried 200 hidden nodes with 577 input nodes.
+
+Extremely slow so probably not feasible unless we decide to use bigger chunks than 4 x 4
