@@ -7,14 +7,14 @@ from neat.reporting import BaseReporter
 
 class generationData():
     generation = 0
-    framesForGen = 50
+    framesForGen = 10
 
     # advance metadata by one generation
     def nextGen(self):
         self.generation += 1
 
         if self.generation % 10 == 0 and self.framesForGen < 1000:
-            self.framesForGen += 50
+            self.framesForGen += 100
 
     # get generation number
     def getGen(self):
@@ -43,13 +43,10 @@ class afterGenerationReporter(BaseReporter):
     def post_evaluate(self, config, population, species, best_genome):
         print("----- Post Evaluate -----")
         print("completed generation " + str(genData.generation))
-        print("best genome fitness " + str(best_genome.fitness))
+        print("genome " + str(best_genome.key) + " had best genome fitness of " + str(best_genome.fitness))
 
     # after the generation has completed
     def end_generation(self, config, population, species_set):
-        # for genome in population.values():
-        #     print(genome.fitness)
-
         self.generation.nextGen()
 
 
@@ -69,7 +66,7 @@ def convert_pixel_to_input(p):
         return -1
 
     # grey (107,107,107), (105,105,105), (42,42,42), (31,31,31), (4,4,4), (173,173,173), (102,102,102)
-    #      (177,177,177) (190,190,190), (57,57,57)
+    #      (177,177,177), (190,190,190), (57,57,57)
     elif (p[0] == p[1] == p[2] == 107) or \
             p[0] == p[1] == p[2] == 105 or \
             p[0] == p[1] == p[2] == 42 or \
@@ -94,33 +91,6 @@ def convert_observation_to_inputs(observation):
         for y in range(95):
             newInputs.append(convert_pixel_to_input(observation[x, y]))
     return newInputs
-
-
-# # get mean of all elements in the 4 x 4 chunk of values
-# def get_mean(list):
-#     if len(list) != 16:
-#         raise EnvironmentError("number of inputs in list is invalid")
-#
-#     total = 0
-#     items = 0
-#     for i in list:
-#         items += 1
-#         total += i
-#     return total / items
-#
-#
-# # converts observation from gym to 576 inputs for 4 x 4 chunks of pixels
-# def convert_observation_to_inputs(observation):
-#     finalInputs = list()
-#     tempInputs = list()
-#     for x in range(24):
-#         for y in range(24):
-#             for xr in range(4):
-#                 for yr in range(4):
-#                     tempInputs.append(convert_pixel_to_input(observation[4 * x + xr, 4 * y + yr]))
-#             finalInputs.append(get_mean(tempInputs))
-#             tempInputs = list()
-#     return finalInputs
 
 
 # alters outputs from neural network
@@ -156,17 +126,39 @@ def eval_genomes(genomes, config):
         genome.fitness = totalReward
 
 
+# when running best generation, this method runs until terminated
+def runBestGenome(genomes, config):
+    bestGenomeId = 906  # hardcoded id
+    bestGenomeIndex = 0 # hardcoded index
+
+
+    net = neat.nn.FeedForwardNetwork.create(genomes[0][1], config)  # instantiate new NN
+
+    while True:
+        observation = env.reset()
+        for _ in range(1000):
+            env.render()  # comment out for better performance but no visual
+            inputs = convert_observation_to_inputs(observation)
+            inputs.append(1)  # add bias node
+            output = net.activate(inputs)
+            observation, reward, done, info = env.step(prepare_outputs(output))  # advance to next frame
+
+
 # Load configuration.
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
                      'config')
 
-# Create the population
+# Create the population based on command line arguments
 if len(sys.argv) == 1:
     p = neat.Population(config)
+elif sys.argv[1] == "best":
+    p = Checkpointer.restore_checkpoint("third_run_190/gen-169")
+    genData.setFrames(1000)
+    p.run(runBestGenome)
 else:
     p = Checkpointer.restore_checkpoint(sys.argv[1])
-    genData.setFrames(200)  # initial number of frames when loading population
+    genData.setFrames(1000)  # initial number of frames when loading population
     print("loaded population from " + sys.argv[1])
 
 # add checkpoints and logger
